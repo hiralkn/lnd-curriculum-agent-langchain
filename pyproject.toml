@@ -1,0 +1,26 @@
+[project]
+name = "lnd-curriculum-agent"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "Your Name", email = "your.email@example.com" }
+]
+requires-python = ">=3.12.12"
+dependencies = [
+    "langchain-core>=1.4.2",
+    "langchain-openai>=1.2.2",
+    "langgraph>=1.2.4",
+    "langsmith>=0.8.11",
+    "playwright>=1.63.0",
+    "pydantic>=2.13.3",
+    "python-dotenv>=1.2.2",
+    "streamlit>=1.64.0",
+]
+
+[project.scripts]
+lnd-curriculum-agent = "lnd_curriculum_agent:main"
+
+[build-system]
+requires = ["uv_build>=0.12.13,<0.13.0"]
+build-backend = "uv_build"
