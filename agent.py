@@ -17,7 +17,7 @@ from middleware import SafeTokenGuardMiddleware
 load_dotenv()
 
 # ==========================================
-# 1. DEFINE LANGGRAPH STATE
+# 1. DEFINE LANGGRAPH STATE (Deep Agent Channels Added)
 # ==========================================
 class AgentState(TypedDict):
     target_role: str
@@ -27,6 +27,9 @@ class AgentState(TypedDict):
     review_feedback: str
     iterations: int
     final_output: Dict[str, Any]
+    # --- Deep Agent Cognitive Slots ---
+    active_plan: List[str]          # Dynamic sub-tasks currently being computed
+    critique_log: List[str]         # Tracks internal reasoning history over iterations
 
 # ==========================================
 # 2. INITIALIZE CORE LLM & MIDDLEWARE
@@ -54,15 +57,49 @@ async def research_node(state: AgentState) -> Dict[str, Any]:
     return {"scraped_raw_data": scraped_text, "iterations": 0}
 
 
+def planner_node(state: AgentState) -> Dict[str, Any]:
+    """NEW Node: Deep Agent Cognitive Component. Dynamic strategy adjustments."""
+    print(f"🧠 [Planner Node] Reviewing critiques. Generating optimization roadmap...")
+    
+    feedback = state.get("review_feedback", "Initial Plan Execution.")
+    target_role = state.get("target_role")
+    
+    planner_prompt = (
+        "You are an Elite L&D Strategy Director. Your goal is to look at the targets and critiques, "
+        "and break down a step-by-step strategy for the Designer to follow.\n\n"
+        f"Target Role: {target_role}\n"
+        f"Latest Feedback: {feedback}\n\n"
+        "Output exactly 3 clear instructions (one per line) focusing on fixing the critiques or maximizing the role depth. "
+        "Do not output conversational filler, introductory text, or markdown symbols."
+    )
+    
+    response = llm.invoke([SystemMessage(content=planner_prompt)])
+    instructions = [line.strip() for line in response.content.split("\n") if line.strip()]
+    
+    # Initialize or append to tracking logs
+    current_log = state.get("critique_log", [])
+    if current_log is None:
+        current_log = []
+        
+    return {
+        "active_plan": instructions,
+        "critique_log": current_log + [f"Iteration {state.get('iterations', 0)}: {feedback}"]
+    }
+
+
 def designer_node(state: AgentState) -> Dict[str, Any]:
-    """Node 2: Drafts the curriculum based on research and prior critique."""
+    """Node 2 (Updated): Drafts the curriculum factoring in the Planner's instructions."""
     print(f"🎨 [Designer Node] Drafting curriculum. Iteration: {state['iterations'] + 1}")
+    
+    # Read the dynamic plan injected by the Deep Planner
+    current_plan = "\n".join([f"- {task}" for task in state.get("active_plan", [])])
     
     system_prompt = (
         "You are an expert Corporate L&D Instructional Designer. Your job is to create "
         "a cutting-edge curriculum targeting the user's requested role.\n\n"
         f"Target Role: {state['target_role']}\n"
         f"Live Industry Data: {state['scraped_raw_data']}\n"
+        f"Strategic Plan To Follow:\n{current_plan}\n\n"  # Deep Architecture Layer
         f"Prior Review Feedback (if any): {state.get('review_feedback', 'None. This is your first draft.')}"
     )
     
@@ -113,34 +150,36 @@ def reviewer_node(state: AgentState) -> Dict[str, Any]:
 
 
 # ==========================================
-# 4. DEFINE CONDITIONAL ROUTING LOGIC
+# 4. DEFINE CONDITIONAL ROUTING LOGIC (Updated to point to Planner)
 # ==========================================
-def route_approval(state: AgentState) -> Literal["designer", "__end__"]:
-    """Determines whether to loop back and fix the design or conclude the graph workflow."""
+def route_approval(state: AgentState) -> Literal["planner", "__end__"]:
+    """Determines whether to loop back to the Planner for optimization or conclude the graph workflow."""
     if state.get("review_feedback") == "APPROVED":
-        print("✅ [Workflow] Curriculum Approved by QA Node!")
+        print("✅ [Workflow] Deep Agent Optimization Validated and Approved!")
         return END
     
     if state["iterations"] >= 3:
         print("⚠️ [Workflow] Maximum iterations reached. Forcing fallback approval.")
         return END
         
-    print(f"🔄 [Workflow] Draft rejected. Routing back to Designer. Feedback: {state['review_feedback']}")
-    return "designer"
+    print(f"🔄 [Workflow] Draft rejected. Routing to Planner for strategy recalculation. Feedback: {state['review_feedback']}")
+    return "planner"  # Routes back to the planner instead of straight to the designer
 
 # ==========================================
 # 5. ASSEMBLE THE WORKFLOW GRAPH
 # ==========================================
 workflow = StateGraph(AgentState)
 
-# Add our independent processing modules
+# Add our independent processing modules (Added planner node here)
 workflow.add_node("research", research_node)
+workflow.add_node("planner", planner_node)
 workflow.add_node("designer", designer_node)
 workflow.add_node("reviewer", reviewer_node)
 
 # Map edge connections chronologically
 workflow.add_edge(START, "research")
-workflow.add_edge("research", "designer")
+workflow.add_edge("research", "planner")        # Routes from Research straight into Strategy Planning
+workflow.add_edge("planner", "designer")
 workflow.add_edge("designer", "reviewer")
 
 # Attach the iterative critique fallback loop
